@@ -1,15 +1,3 @@
----
-title: TimeXer Day-Ahead Solar Net-Load AI
-emoji: ⚡
-colorFrom: yellow
-colorTo: blue
-sdk: gradio
-sdk_version: 5.20.0
-app_file: app.py
-pinned: false
-license: mit
----
-
 # ⚡ TimeXer AI - Day-Ahead Solar Net-Load Forecasting & Smart Load Shifting
 
 An intelligent, full-stack mobile web application powered by Google DeepMind's **TimeXer** architecture. It forecasts tomorrow's 24-hour household solar net-load profile at 21:00 Day-Ahead and dynamically schedules heavy appliances (washer, e-scooter, water heater) into optimal solar surplus windows, preventing EVN peak electricity penalties.
