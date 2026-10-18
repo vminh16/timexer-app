@@ -38,10 +38,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 
-# Install application dependencies
+# Install application dependencies (safely filtering out torch without deleting reformer-pytorch)
 COPY backend/requirements.txt ./
-RUN sed -i '/torch/d' requirements.txt && \
-    pip install --no-cache-dir -r requirements.txt
+RUN grep -v -E '^torch([>=<~]|$)|^--extra-index-url' requirements.txt > reqs_clean.txt && \
+    pip install --no-cache-dir -r reqs_clean.txt && \
+    pip install --no-cache-dir reformer-pytorch
 
 # Copy backend application and pre-built frontend assets
 COPY --chown=appuser:appuser backend/ ./backend/
