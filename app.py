@@ -1,3 +1,16 @@
+# ZeroGPU integration for Hugging Face Spaces (MUST be imported before torch/CUDA)
+try:
+    import spaces
+except ImportError:
+    class spaces:
+        @staticmethod
+        def GPU(func=None, **kwargs):
+            if func is not None:
+                return func
+            def decorator(f):
+                return f
+            return decorator
+
 import os
 import sys
 import time
@@ -17,19 +30,6 @@ from backend.app.main import app as fastapi_app
 from backend.app.engine.model_runner import runner
 from backend.app.engine.decision import run_decision_engine
 from backend.app.schemas import ApplianceSchema
-
-# ZeroGPU integration for Hugging Face Spaces
-try:
-    import spaces
-except ImportError:
-    class spaces:
-        @staticmethod
-        def GPU(func=None, **kwargs):
-            if func is not None:
-                return func
-            def decorator(f):
-                return f
-            return decorator
 
 # ------------------------------------------------------------------------------
 # Core Prediction & Plotting Function
