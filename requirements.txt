@@ -1,10 +1,7 @@
 # ==============================================================================
 # TimeXer AI - Hugging Face Spaces (Gradio SDK) Requirements
-# Uses CPU-optimized PyTorch wheel for rapid build (<1 min) and low memory footprint
+# PyTorch with CUDA is pre-installed in the ZeroGPU base environment
 # ==============================================================================
-
---extra-index-url https://download.pytorch.org/whl/cpu
-torch==2.5.1+cpu
 
 gradio>=4.44.0
 fastapi>=0.110.0
