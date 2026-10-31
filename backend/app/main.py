@@ -31,7 +31,12 @@ app.add_middleware(
 
 @app.get("/api/health")
 async def health_check():
-    return {"status": "ok", "service": "timexer-backend"}
+    import os
+    return {
+        "status": "ok",
+        "service": "timexer-backend",
+        "commit": os.environ.get("RENDER_GIT_COMMIT", "local"),  # Render sets this at runtime
+    }
 
 
 @app.get("/api/status", response_model=StatusResponse)
