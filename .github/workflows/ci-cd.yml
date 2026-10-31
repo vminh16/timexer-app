@@ -103,8 +103,8 @@ jobs:
       name: production
       url: ${{ vars.RENDER_APP_URL }}
     steps:
-      - name: Trigger Render deploy hook
-        run: curl -sf -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
+      - name: Trigger Render deploy hook (pin to the tested commit)
+        run: curl -sf -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}&ref=${{ github.sha }}"
 
       - name: Wait until production runs this commit
         run: |
