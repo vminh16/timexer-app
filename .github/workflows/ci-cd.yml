@@ -1,0 +1,126 @@
+# CI/CD cho app AI TimeXer
+#   CI : test code + kiểm định chất lượng model + build frontend + build & smoke-test Docker image
+#   CD : chỉ khi CI xanh trên nhánh main -> gọi Render Deploy Hook -> kiểm tra production
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-cd-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------- CI ----
+  backend-model-test:
+    name: "CI 1 · Backend & Model quality gate"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install PyTorch (CPU) + dependencies
+        run: |
+          pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+          grep -v -E '^torch([>=<~]|$)|^--extra-index-url' requirements.txt > reqs_ci.txt
+          pip install -r reqs_ci.txt
+
+      - name: Verify model artifact (checkpoint + dataset)
+        run: |
+          ls -lh checkpoints/checkpoint.pth data/Solar_Customer_1.csv
+          sha256sum checkpoints/checkpoint.pth
+
+      - name: Unit & API tests
+        run: python -m pytest app/tests/test_decision.py app/tests/test_api.py -v
+
+      - name: Model quality gate (MAE, NaN, latency, guardrail)
+        run: python -m pytest app/tests/test_model_quality.py -v -s
+
+  frontend-build:
+    name: "CI 2 · Frontend lint & build"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+
+  docker-smoke-test:
+    name: "CI 3 · Docker build & smoke test"
+    needs: [backend-model-test, frontend-build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build production image (same Dockerfile as Render)
+        run: docker build -t timexer-app:${{ github.sha }} .
+
+      - name: Run container and check the model is served
+        run: |
+          docker run -d --name app -p 8000:8000 timexer-app:${{ github.sha }}
+          for i in $(seq 1 30); do
+            curl -sf localhost:8000/api/health && break || sleep 2
+          done
+          echo; echo "== /api/status =="
+          curl -sf localhost:8000/api/status | tee status.json
+          python3 -c "import json; s=json.load(open('status.json')); assert s['checkpoint_loaded'], s"
+          echo; echo "== /api/forecast =="
+          curl -sf -X POST localhost:8000/api/forecast -H 'Content-Type: application/json' \
+            -d '{"appliances":[{"id":"washer","name":"Washer","powerKwh":1.0}],"config":{},"scenarioId":"sunny"}' \
+            | python3 -c "import json,sys; d=json.load(sys.stdin); assert len(d['hourlyPoints'])==24; print('window', d['bestWindowStart'], '-', d['bestWindowEnd'], '| surplus', d['totalSurplusKwh'], 'kWh | latency', d['inferenceTimeMs'], 'ms')"
+
+      - name: Container logs
+        if: always()
+        run: docker logs app || true
+
+  # ---------------------------------------------------------------- CD ----
+  deploy-render:
+    name: "CD · Deploy to Render"
+    needs: [docker-smoke-test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ vars.RENDER_APP_URL }}
+    steps:
+      - name: Trigger Render deploy hook
+        run: curl -sf -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
+
+      - name: Wait until production runs this commit
+        run: |
+          # Render free: build ~5-10 phút + cold start
+          for i in $(seq 1 60); do
+            commit=$(curl -sf "${{ vars.RENDER_APP_URL }}/api/health" | python3 -c "import json,sys; print(json.load(sys.stdin)['commit'])" || true)
+            echo "($i) production commit = ${commit:-unreachable}"
+            [ "$commit" = "${{ github.sha }}" ] && exit 0
+            sleep 20
+          done
+          exit 1
+
+      - name: Production smoke test (model loaded & forecasting)
+        run: |
+          curl -sf "${{ vars.RENDER_APP_URL }}/api/status" | tee status.json; echo
+          python3 -c "import json; assert json.load(open('status.json'))['checkpoint_loaded']"
+          curl -sf -X POST "${{ vars.RENDER_APP_URL }}/api/forecast" -H 'Content-Type: application/json' \
+            -d '{"appliances":[{"id":"washer","name":"Washer","powerKwh":1.0}],"config":{},"scenarioId":"sunny"}' \
+            | python3 -c "import json,sys; d=json.load(sys.stdin); assert len(d['hourlyPoints'])==24; print('OK: 24h forecast, latency', d['inferenceTimeMs'], 'ms')"

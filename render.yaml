@@ -5,6 +5,8 @@ services:
     plan: free
     region: singapore
     dockerfilePath: Dockerfile
+    # Không tự deploy mỗi lần push: GitHub Actions chỉ gọi Deploy Hook khi CI xanh
+    autoDeployTrigger: "off"
     envVars:
       - key: PYTHONUNBUFFERED
         value: "1"
